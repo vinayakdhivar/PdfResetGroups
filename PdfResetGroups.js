@@ -7,6 +7,7 @@ import path from 'path';
 import fs from 'fs';
 import crypto from 'crypto';
 import { fileURLToPath } from 'url';
+import ImageKit from 'imagekit';
 
 // === ES Module equivalents for __dirname ===
 const __filename = fileURLToPath(import.meta.url);
@@ -36,6 +37,13 @@ pdfDB.on('error', err => console.error('❌ PDF DB connection error:', err));
 const contentDB = mongoose.createConnection('mongodb+srv://dhivarvinayak:dhivarvinayak@cluster0.s1sdgdp.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0');
 contentDB.on('connected', () => console.log('✅ Content DB connected to MongoDB.'));
 contentDB.on('error', err => console.error('❌ Content DB connection error:', err));
+
+// === ImageKit Initialization ===
+const imagekit = new ImageKit({
+    publicKey: "public_rjHIIWf=3fdTeab",
+    privateKey: "private_Bml1q/l+P0BvVcA2KUAPHj2IZ8s=", // Replace with your actual private key
+    urlEndpoint: "https://lk.imagekit.io/vinaryak123"
+});
 
 // === Mongoose Schemas & Models ===
 
@@ -83,22 +91,8 @@ const transporter = nodemailer.createTransport({
 });
 
 // === Multer Setup for File Uploads ===
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    const uploadDir = 'uploads/';
-    if (!fs.existsSync(uploadDir)) {
-      fs.mkdirSync(uploadDir, { recursive: true });
-    }
-    cb(null, uploadDir);
-  },
-  filename: (req, file, cb) => {
-    const uniqueSuffix = Date.now() + '-' + crypto.randomBytes(4).toString('hex');
-    cb(null, uniqueSuffix + path.extname(file.originalname));
-  },
-});
-
 const upload = multer({
-  storage,
+  storage: multer.memoryStorage(), // Store files in memory for ImageKit upload
   limits: { fileSize: 10 * 1024 * 1024 }, // 10MB limit
   fileFilter: (req, file, cb) => {
     if (file.mimetype === 'application/pdf') {
@@ -219,21 +213,27 @@ app.post('/add-aibe-pdf', upload.single('pdf'), async (req, res) => {
   const { name, uploadedBy } = req.body;
   
   if (!name || !req.file) {
-    // Clean up uploaded file if validation fails
-    if (req.file) {
-      fs.unlink(req.file.path, () => {});
-    }
     return res.status(400).json({ error: 'Name and PDF file are required' });
   }
 
   try {
+    // Upload to ImageKit
+    const result = await imagekit.upload({
+      file: req.file.buffer,
+      fileName: `${Date.now()}-${req.file.originalname}`,
+      folder: "/aibe-pdfs",
+      useUniqueFileName: true
+    });
+
+    // Save to database
     const pdf = new Pdf({
       name,
-      filePath: req.file.path,
+      filePath: result.url, // ImageKit URL
       uploadedBy: uploadedBy || 'Anonymous',
     });
     
     await pdf.save();
+    
     res.status(201).json({
       _id: pdf._id,
       name: pdf.name,
@@ -242,10 +242,6 @@ app.post('/add-aibe-pdf', upload.single('pdf'), async (req, res) => {
       createdAt: pdf.createdAt
     });
   } catch (err) {
-    // Clean up file if save fails
-    if (req.file) {
-      fs.unlink(req.file.path, () => {});
-    }
     console.error('Error adding PDF:', err);
     res.status(500).json({ error: 'Failed to add PDF' });
   }
@@ -285,14 +281,15 @@ app.delete('/delete-aibe-pdf/:id', async (req, res) => {
       return res.status(404).json({ error: 'PDF not found' });
     }
 
-    // Delete the file from the filesystem
-    if (fs.existsSync(pdf.filePath)) {
-      fs.unlink(pdf.filePath, (err) => {
-        if (err) console.error('Error deleting file:', err);
-      });
-    }
+    // Extract file ID from ImageKit URL
+    const fileId = pdf.filePath.split('/').pop().split('.')[0];
+    
+    // Delete from ImageKit
+    await imagekit.deleteFile(fileId);
 
+    // Delete from database
     await Pdf.deleteOne({ _id: req.params.id });
+    
     res.status(200).json({ message: 'PDF deleted successfully' });
   } catch (err) {
     console.error('Error deleting PDF:', err);
@@ -462,9 +459,6 @@ app.delete('/api/groups/:groupId/sections/:sectionId', async (req, res) => {
     res.status(500).json({ message: err.message || 'Failed to delete section' });
   }
 });
-
-// Serve uploaded PDFs
-app.use('/uploads', express.static('uploads'));
 
 // Error handling middleware
 app.use((err, req, res, next) => {
