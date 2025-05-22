@@ -8,6 +8,8 @@ import fs from 'fs';
 import crypto from 'crypto';
 import { fileURLToPath } from 'url';
 import ImageKit from 'imagekit';
+import { v2 as cloudinary } from 'cloudinary';
+import { CloudinaryStorage } from 'multer-storage-cloudinary';
 
 // === ES Module equivalents for __dirname ===
 const __filename = fileURLToPath(import.meta.url);
@@ -25,24 +27,35 @@ const authDB = mongoose.createConnection('mongodb+srv://dhivarvinayak:dhivarvina
 authDB.on('connected', () => console.log('✅ Auth DB connected to MongoDB.'));
 authDB.on('error', err => console.error('❌ Auth DB connection error:', err));
 
-// 2. MongoDB Connection for PDF Management (Cluster0.trdrhof)
-const pdfDB = mongoose.createConnection('mongodb+srv://dhivarvinayak:dhivarvinayak@cluster0.trdrhof.mongodb.net/aibe?retryWrites=true&w=majority', {
-  useNewUrlParser: true,
-  useUnifiedTopology: true,
-});
-pdfDB.on('connected', () => console.log('✅ PDF DB connected to MongoDB.'));
-pdfDB.on('error', err => console.error('❌ PDF DB connection error:', err));
-
-// 3. MongoDB Connection for Groups/Sections (Cluster0.s1sdgdp)
+// 2. MongoDB Connection for Groups/Sections (Cluster0.s1sdgdp)
 const contentDB = mongoose.createConnection('mongodb+srv://dhivarvinayak:dhivarvinayak@cluster0.s1sdgdp.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0');
 contentDB.on('connected', () => console.log('✅ Content DB connected to MongoDB.'));
 contentDB.on('error', err => console.error('❌ Content DB connection error:', err));
 
-// === ImageKit Initialization ===
+// === ImageKit Initialization with correct credentials ===
 const imagekit = new ImageKit({
-    publicKey: "public_rjHIIWf=3fdTeab",
-    privateKey: "private_Bml1q/l+P0BvVcA2KUAPHj2IZ8s=", // Replace with your actual private key
-    urlEndpoint: "https://lk.imagekit.io/vinaryak123"
+    publicKey: "public_rjHIUyE+3f1dTeabLndOCgg81M4=",
+    privateKey: "private_Bml1q/l+P0BvVcA2KUAPHj2IZ8s=",
+    urlEndpoint: "https://ik.imagekit.io/vinayak123"
+});
+
+// === Cloudinary Configuration ===
+cloudinary.config({
+  cloud_name: 'your_cloud_name',
+  api_key: 'your_api_key',
+  api_secret: 'your_api_secret'
+});
+
+const cloudinaryStorage = new CloudinaryStorage({
+  cloudinary: cloudinary,
+  params: {
+    folder: 'aibe-pdfs',
+    format: async (req, file) => 'pdf',
+    public_id: (req, file) => {
+      const filename = file.originalname.split('.')[0];
+      return `${filename}-${Date.now()}`;
+    }
+  }
 });
 
 // === Mongoose Schemas & Models ===
@@ -55,15 +68,7 @@ const userSchema = new mongoose.Schema({
   resetTokenExpiry: Date,
 });
 
-// 2. PDF Schema for PDF Management
-const pdfSchema = new mongoose.Schema({
-  name: { type: String, required: true },
-  filePath: { type: String, required: true },
-  uploadedBy: { type: String, required: true },
-  createdAt: { type: Date, default: Date.now },
-});
-
-// 3. Groups/Sections Schema
+// 2. Groups/Sections Schema
 const SectionSchema = new mongoose.Schema({
   name: { type: String, required: true },
   text: { type: String, default: '' },
@@ -78,7 +83,6 @@ const GroupSchema = new mongoose.Schema({
 });
 
 const User = authDB.model('users', userSchema);
-const Pdf = pdfDB.model('Pdf', pdfSchema);
 const Group = contentDB.model('Group', GroupSchema);
 
 // === Nodemailer Transporter Configuration ===
@@ -86,13 +90,13 @@ const transporter = nodemailer.createTransport({
   service: 'gmail',
   auth: {
     user: 'digitallaw2025@gmail.com',
-    pass: 'kjrb jzxs qrbv oppr', // Consider using environment variables
+    pass: 'kjrb jzxs qrbv oppr',
   },
 });
 
 // === Multer Setup for File Uploads ===
 const upload = multer({
-  storage: multer.memoryStorage(), // Store files in memory for ImageKit upload
+  storage: cloudinaryStorage, // Using Cloudinary storage
   limits: { fileSize: 10 * 1024 * 1024 }, // 10MB limit
   fileFilter: (req, file, cb) => {
     if (file.mimetype === 'application/pdf') {
@@ -195,105 +199,91 @@ app.post('/api/auth/reset-password/:token', async (req, res) => {
   }
 });
 
-// === PDF Routes (using pdfDB) ===
+// === PDF Routes (using Cloudinary) ===
 
-// 1. GET: Fetch all PDFs
-app.get('/aibe-pdfs', async (req, res) => {
+// 1. POST: Upload PDF to Cloudinary
+app.post('/upload-pdf', upload.single('pdf'), async (req, res) => {
   try {
-    const pdfs = await Pdf.find().select('-__v').sort({ createdAt: -1 });
-    res.status(200).json(pdfs);
-  } catch (err) {
-    console.error('Error fetching PDFs:', err);
-    res.status(500).json({ error: 'Failed to fetch PDFs' });
-  }
-});
+    if (!req.file) {
+      return res.status(400).json({ error: 'No PDF file uploaded' });
+    }
 
-// 2. POST: Add a new PDF
-app.post('/add-aibe-pdf', upload.single('pdf'), async (req, res) => {
-  const { name, uploadedBy } = req.body;
-  
-  if (!name || !req.file) {
-    return res.status(400).json({ error: 'Name and PDF file are required' });
-  }
+    // Cloudinary automatically uploads the file via multer-storage-cloudinary
+    const result = req.file; // Contains Cloudinary response
 
-  try {
-    // Upload to ImageKit
-    const result = await imagekit.upload({
-      file: req.file.buffer,
-      fileName: `${Date.now()}-${req.file.originalname}`,
-      folder: "/aibe-pdfs",
-      useUniqueFileName: true
-    });
-
-    // Save to database
-    const pdf = new Pdf({
-      name,
-      filePath: result.url, // ImageKit URL
-      uploadedBy: uploadedBy || 'Anonymous',
-    });
-    
-    await pdf.save();
-    
     res.status(201).json({
-      _id: pdf._id,
-      name: pdf.name,
-      filePath: pdf.filePath,
-      uploadedBy: pdf.uploadedBy,
-      createdAt: pdf.createdAt
+      success: true,
+      fileInfo: {
+        url: result.path,
+        publicId: result.filename,
+        format: result.format,
+        bytes: result.size
+      }
     });
   } catch (err) {
-    console.error('Error adding PDF:', err);
-    res.status(500).json({ error: 'Failed to add PDF' });
+    console.error('Error uploading PDF:', err);
+    res.status(500).json({ error: 'Failed to upload PDF' });
   }
 });
 
-// 3. PUT: Update a PDF
-app.put('/update-aibe-pdf/:id', async (req, res) => {
-  const { name } = req.body;
-  
-  if (!name) {
-    return res.status(400).json({ error: 'Name is required' });
-  }
-
+// 2. DELETE: Delete PDF from Cloudinary
+app.delete('/delete-pdf/:publicId', async (req, res) => {
   try {
-    const pdf = await Pdf.findByIdAndUpdate(
-      req.params.id,
-      { name },
-      { new: true, select: '-__v' }
-    );
+    const { publicId } = req.params;
     
-    if (!pdf) {
-      return res.status(404).json({ error: 'PDF not found' });
+    const result = await cloudinary.uploader.destroy(publicId);
+    
+    if (result.result === 'ok') {
+      res.status(200).json({ message: 'PDF deleted successfully' });
+    } else {
+      res.status(404).json({ error: 'PDF not found' });
     }
-    
-    res.status(200).json(pdf);
-  } catch (err) {
-    console.error('Error updating PDF:', err);
-    res.status(500).json({ error: 'Failed to update PDF' });
-  }
-});
-
-// 4. DELETE: Delete a PDF
-app.delete('/delete-aibe-pdf/:id', async (req, res) => {
-  try {
-    const pdf = await Pdf.findById(req.params.id);
-    if (!pdf) {
-      return res.status(404).json({ error: 'PDF not found' });
-    }
-
-    // Extract file ID from ImageKit URL
-    const fileId = pdf.filePath.split('/').pop().split('.')[0];
-    
-    // Delete from ImageKit
-    await imagekit.deleteFile(fileId);
-
-    // Delete from database
-    await Pdf.deleteOne({ _id: req.params.id });
-    
-    res.status(200).json({ message: 'PDF deleted successfully' });
   } catch (err) {
     console.error('Error deleting PDF:', err);
     res.status(500).json({ error: 'Failed to delete PDF' });
+  }
+});
+
+// === ImageKit Routes ===
+
+// 1. Upload image to ImageKit
+app.post('/upload-image', upload.single('image'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: 'No image file uploaded' });
+    }
+
+    const result = await imagekit.upload({
+      file: req.file.buffer,
+      fileName: `${Date.now()}-${req.file.originalname}`,
+      useUniqueFileName: true
+    });
+
+    res.status(201).json({
+      success: true,
+      fileInfo: {
+        url: result.url,
+        fileId: result.fileId,
+        fileType: result.fileType
+      }
+    });
+  } catch (err) {
+    console.error('Error uploading image:', err);
+    res.status(500).json({ error: 'Failed to upload image' });
+  }
+});
+
+// 2. Delete image from ImageKit
+app.delete('/delete-image/:fileId', async (req, res) => {
+  try {
+    const { fileId } = req.params;
+    
+    await imagekit.deleteFile(fileId);
+    
+    res.status(200).json({ message: 'Image deleted successfully' });
+  } catch (err) {
+    console.error('Error deleting image:', err);
+    res.status(500).json({ error: 'Failed to delete image' });
   }
 });
 
