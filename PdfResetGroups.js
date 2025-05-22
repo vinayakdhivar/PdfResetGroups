@@ -41,9 +41,9 @@ const imagekit = new ImageKit({
 
 // === Cloudinary Configuration ===
 cloudinary.config({
-  cloud_name: 'your_cloud_name',
-  api_key: 'your_api_key',
-  api_secret: 'your_api_secret'
+  cloud_name: 'dnumdrets',
+  api_key: '187259726668194',
+  api_secret: 'CfBL6Wx1p_oCmk9yWqzF5sOU05g'
 });
 
 const cloudinaryStorage = new CloudinaryStorage({
