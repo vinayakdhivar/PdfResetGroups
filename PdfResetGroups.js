@@ -201,7 +201,33 @@ app.post('/api/auth/reset-password/:token', async (req, res) => {
 
 // === PDF Routes (using Cloudinary) ===
 
-// 1. POST: Upload PDF to Cloudinary
+// GET: List all PDFs from Cloudinary
+app.get('/api/pdfs', async (req, res) => {
+  try {
+    const result = await cloudinary.api.resources({
+      type: 'upload',
+      prefix: 'aibe-pdfs/',
+      resource_type: 'raw' // For PDF files
+    });
+
+    const pdfs = result.resources.map(file => ({
+      _id: file.public_id,
+      name: file.public_id.split('/').pop().split('-')[0], // Extract original name
+      url: file.secure_url,
+      publicId: file.public_id,
+      format: file.format,
+      bytes: file.bytes,
+      createdAt: file.created_at
+    }));
+
+    res.status(200).json(pdfs);
+  } catch (err) {
+    console.error('Error fetching PDFs:', err);
+    res.status(500).json({ error: 'Failed to fetch PDFs' });
+  }
+});
+
+// POST: Upload PDF to Cloudinary
 app.post('/upload-pdf', upload.single('pdf'), async (req, res) => {
   try {
     if (!req.file) {
@@ -226,7 +252,7 @@ app.post('/upload-pdf', upload.single('pdf'), async (req, res) => {
   }
 });
 
-// 2. DELETE: Delete PDF from Cloudinary
+// DELETE: Delete PDF from Cloudinary
 app.delete('/delete-pdf/:publicId', async (req, res) => {
   try {
     const { publicId } = req.params;
