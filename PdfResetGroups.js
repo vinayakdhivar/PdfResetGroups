@@ -493,9 +493,6 @@ testsDB.on('error', err => console.error('❌ Tests DB connection error:', err))
 
 //------------------------------------------Test Management-------------------------------------------------//
 
-// === Database Connections ===
-const mongoose = require('mongoose');
-
 // Improved MongoDB connection with better error handling
 const testsDB = mongoose.createConnection(
   'mongodb+srv://digitallaw2025:DhivarVinayak@cluster0.buidy6u.mongodb.net/testDB?retryWrites=true&w=majority', 
