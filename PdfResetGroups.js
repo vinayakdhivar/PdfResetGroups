@@ -482,8 +482,6 @@ app.use((err, req, res, next) => {
 
 //------------------------------------------mix-------------------------------------------------//
 
-//------------------------------------------Test Management-------------------------------------------------//
-
 // Improved MongoDB connection with better error handling
 const testsDB = mongoose.createConnection(
   'mongodb+srv://digitallaw2025:DhivarVinayak@cluster0.buidy6u.mongodb.net/testDB?retryWrites=true&w=majority', 
@@ -512,7 +510,7 @@ const checkDBConnection = (req, res, next) => {
   next();
 };
 
-// Enhanced Test Management Schema with better validation
+// Enhanced Test Management Schema with exactly 4 options
 const testSchema = new mongoose.Schema({
   name: { 
     type: String, 
@@ -544,23 +542,19 @@ const testSchema = new mongoose.Schema({
       required: true,
       validate: {
         validator: function(v) {
-          // At least 2 options, no duplicates (case insensitive)
-          if (v.length < 2) return false;
+          // Exactly 4 options, no duplicates (case insensitive)
+          if (v.length !== 4) return false;
           const lowerCaseOptions = v.map(opt => opt.toLowerCase());
           return new Set(lowerCaseOptions).size === v.length;
         },
-        message: 'At least 2 unique options are required'
+        message: 'Exactly 4 unique options are required (A, B, C, D)'
       }
     },
     correctAnswer: { 
-      type: Number, 
+      type: String, 
       required: true,
-      validate: {
-        validator: function(v) {
-          return v >= 0 && v < this.options.length;
-        },
-        message: 'Correct answer must be a valid option index'
-      }
+      enum: ['A', 'B', 'C', 'D'],
+      message: 'Correct answer must be one of: A, B, C, D'
     },
     createdAt: { type: Date, default: Date.now }
   }],
@@ -660,16 +654,16 @@ app.post('/api/tests/:id/questions', checkDBConnection, async (req, res) => {
     const { questionText, options, correctAnswer } = req.body;
     
     // Validate input
-    if (!questionText || !options || correctAnswer === undefined) {
+    if (!questionText || !options || !correctAnswer) {
       return res.status(400).json({ error: 'Missing required fields' });
     }
     
-    if (!Array.isArray(options) || options.length < 2) {
-      return res.status(400).json({ error: 'At least 2 options required' });
+    if (!Array.isArray(options) || options.length !== 4) {
+      return res.status(400).json({ error: 'Exactly 4 options required' });
     }
     
-    if (correctAnswer < 0 || correctAnswer >= options.length) {
-      return res.status(400).json({ error: 'Invalid correct answer index' });
+    if (!['A', 'B', 'C', 'D'].includes(correctAnswer)) {
+      return res.status(400).json({ error: 'Correct answer must be A, B, C, or D' });
     }
     
     const test = await Test.findById(req.params.id);
@@ -698,16 +692,16 @@ app.put('/api/tests/:testId/questions/:questionId', checkDBConnection, async (re
     const { questionText, options, correctAnswer } = req.body;
     
     // Validate input
-    if (!questionText || !options || correctAnswer === undefined) {
+    if (!questionText || !options || !correctAnswer) {
       return res.status(400).json({ error: 'Missing required fields' });
     }
     
-    if (!Array.isArray(options) || options.length < 2) {
-      return res.status(400).json({ error: 'At least 2 options required' });
+    if (!Array.isArray(options) || options.length !== 4) {
+      return res.status(400).json({ error: 'Exactly 4 options required' });
     }
     
-    if (correctAnswer < 0 || correctAnswer >= options.length) {
-      return res.status(400).json({ error: 'Invalid correct answer index' });
+    if (!['A', 'B', 'C', 'D'].includes(correctAnswer)) {
+      return res.status(400).json({ error: 'Correct answer must be A, B, C, or D' });
     }
     
     const test = await Test.findById(req.params.testId);
@@ -750,17 +744,6 @@ app.delete('/api/tests/:testId/questions/:questionId', checkDBConnection, async 
       details: error.message 
     });
   }
-});
-
-// Enhanced health check endpoint
-app.get('/api/health', (req, res) => {
-  const dbStatus = testsDB.readyState === 1 ? 'connected' : 'disconnected';
-  res.json({
-    status: dbStatus === 'connected' ? 'healthy' : 'unhealthy',
-    dbStatus,
-    timestamp: new Date(),
-    uptime: process.uptime()
-  });
 });
 //------------------------------------------mix-------------------------------------------------//
 
