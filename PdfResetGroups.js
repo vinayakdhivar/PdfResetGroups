@@ -493,7 +493,46 @@ testsDB.on('error', err => console.error('❌ Tests DB connection error:', err))
 
 //------------------------------------------Test Management-------------------------------------------------//
 
-// Test Management Schema (using dedicated testsDB)
+// === Database Connections ===
+const mongoose = require('mongoose');
+
+// Improved MongoDB connection with better error handling
+const testsDB = mongoose.createConnection(
+  'mongodb+srv://digitallaw2025:DhivarVinayak@cluster0.buidy6u.mongodb.net/testDB?retryWrites=true&w=majority', 
+  {
+    useNewUrlParser: true,
+    useUnifiedTopology: true,
+    serverSelectionTimeoutMS: 5000, // 5 seconds to establish connection
+    socketTimeoutMS: 45000, // 45 seconds for queries to execute
+    connectTimeoutMS: 10000 // 10 seconds to connect
+  }
+);
+
+// Enhanced connection event handlers
+testsDB.on('connected', () => {
+  console.log('✅ Tests DB connected to MongoDB');
+});
+
+testsDB.on('disconnected', () => {
+  console.log('❌ Tests DB disconnected from MongoDB');
+});
+
+testsDB.on('error', (err) => {
+  console.error('❌ Tests DB connection error:', err);
+});
+
+// Middleware to check DB connection before handling requests
+const checkDBConnection = (req, res, next) => {
+  if (testsDB.readyState !== 1) {
+    return res.status(500).json({ 
+      error: 'Database not connected',
+      details: 'Connection to MongoDB failed'
+    });
+  }
+  next();
+};
+
+// Test Management Schema
 const testSchema = new mongoose.Schema({
   name: { type: String, required: true },
   description: String,
@@ -511,35 +550,45 @@ const Test = testsDB.model('Test', testSchema);
 // === Test Management Routes ===
 
 // 1. Create a new test
-app.post('/api/tests', async (req, res) => {
+app.post('/api/tests', checkDBConnection, async (req, res) => {
   try {
     const test = new Test(req.body);
     await test.save();
     res.status(201).json(test);
   } catch (error) {
     console.error('Error creating test:', error);
-    res.status(400).json({ error: 'Failed to create test' });
+    res.status(400).json({ 
+      error: 'Failed to create test',
+      details: error.message 
+    });
   }
 });
 
-// 2. Get all tests
-app.get('/api/tests', async (req, res) => {
+// 2. Get all tests (with improved error handling)
+app.get('/api/tests', checkDBConnection, async (req, res) => {
   try {
     const tests = await Test.find().sort({ createdAt: -1 });
     res.json(tests);
   } catch (error) {
     console.error('Error fetching tests:', error);
-    res.status(500).json({ error: 'Failed to fetch tests' });
+    res.status(500).json({ 
+      error: 'Failed to fetch tests',
+      details: error.message 
+    });
   }
 });
 
 // 3. Update a test
-app.put('/api/tests/:id', async (req, res) => {
+app.put('/api/tests/:id', checkDBConnection, async (req, res) => {
   try {
-    const test = await Test.findByIdAndUpdate(req.params.id, req.body, { 
-      new: true,
-      runValidators: true 
-    });
+    const test = await Test.findByIdAndUpdate(
+      req.params.id, 
+      req.body, 
+      { 
+        new: true,
+        runValidators: true 
+      }
+    );
     
     if (!test) {
       return res.status(404).json({ error: 'Test not found' });
@@ -548,12 +597,15 @@ app.put('/api/tests/:id', async (req, res) => {
     res.json(test);
   } catch (error) {
     console.error('Error updating test:', error);
-    res.status(400).json({ error: 'Failed to update test' });
+    res.status(400).json({ 
+      error: 'Failed to update test',
+      details: error.message 
+    });
   }
 });
 
 // 4. Delete a test
-app.delete('/api/tests/:id', async (req, res) => {
+app.delete('/api/tests/:id', checkDBConnection, async (req, res) => {
   try {
     const test = await Test.findByIdAndDelete(req.params.id);
     
@@ -564,17 +616,25 @@ app.delete('/api/tests/:id', async (req, res) => {
     res.json({ message: 'Test deleted successfully' });
   } catch (error) {
     console.error('Error deleting test:', error);
-    res.status(500).json({ error: 'Failed to delete test' });
+    res.status(500).json({ 
+      error: 'Failed to delete test',
+      details: error.message 
+    });
   }
 });
 
 // 5. Add question to test
-app.post('/api/tests/:id/questions', async (req, res) => {
+app.post('/api/tests/:id/questions', checkDBConnection, async (req, res) => {
   try {
     const test = await Test.findById(req.params.id);
     
     if (!test) {
       return res.status(404).json({ error: 'Test not found' });
+    }
+    
+    // Validate question data
+    if (!req.body.questionText || !req.body.options || req.body.correctAnswer === undefined) {
+      return res.status(400).json({ error: 'Missing required question fields' });
     }
     
     test.questions.push(req.body);
@@ -583,12 +643,15 @@ app.post('/api/tests/:id/questions', async (req, res) => {
     res.status(201).json(test);
   } catch (error) {
     console.error('Error adding question:', error);
-    res.status(400).json({ error: 'Failed to add question' });
+    res.status(400).json({ 
+      error: 'Failed to add question',
+      details: error.message 
+    });
   }
 });
 
 // 6. Update question in test
-app.put('/api/tests/:testId/questions/:questionId', async (req, res) => {
+app.put('/api/tests/:testId/questions/:questionId', checkDBConnection, async (req, res) => {
   try {
     const test = await Test.findById(req.params.testId);
     
@@ -608,12 +671,15 @@ app.put('/api/tests/:testId/questions/:questionId', async (req, res) => {
     res.json(test);
   } catch (error) {
     console.error('Error updating question:', error);
-    res.status(400).json({ error: 'Failed to update question' });
+    res.status(400).json({ 
+      error: 'Failed to update question',
+      details: error.message 
+    });
   }
 });
 
 // 7. Delete question from test
-app.delete('/api/tests/:testId/questions/:questionId', async (req, res) => {
+app.delete('/api/tests/:testId/questions/:questionId', checkDBConnection, async (req, res) => {
   try {
     const test = await Test.findById(req.params.testId);
     
@@ -621,18 +687,33 @@ app.delete('/api/tests/:testId/questions/:questionId', async (req, res) => {
       return res.status(404).json({ error: 'Test not found' });
     }
     
-    test.questions.id(req.params.questionId).remove();
+    const question = test.questions.id(req.params.questionId);
+    if (!question) {
+      return res.status(404).json({ error: 'Question not found' });
+    }
+    
+    question.remove();
     await test.save();
     
-    res.json(test);
+    res.json({ message: 'Question deleted successfully', test });
   } catch (error) {
     console.error('Error deleting question:', error);
-    res.status(500).json({ error: 'Failed to delete question' });
+    res.status(500).json({ 
+      error: 'Failed to delete question',
+      details: error.message 
+    });
   }
 });
 
-//------------------------------------------End Test Management-------------------------------------------------//
-
+// Add health check endpoint
+app.get('/api/health', (req, res) => {
+  const dbStatus = testsDB.readyState === 1 ? 'connected' : 'disconnected';
+  res.json({
+    status: 'ok',
+    dbStatus: dbStatus,
+    timestamp: new Date()
+  });
+});
 //------------------------------------------mix-------------------------------------------------//
 
 // === Start Server ===
