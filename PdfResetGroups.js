@@ -479,6 +479,149 @@ app.use((err, req, res, next) => {
   next();
 });
 
+
+//------------------------------------------mix-------------------------------------------------//
+
+// 4. Test Management Schema (using contentDB)
+const testSchema = new mongoose.Schema({
+  name: { type: String, required: true },
+  description: String,
+  questions: [{
+    questionText: { type: String, required: true },
+    options: [{ type: String, required: true }],
+    correctAnswer: { type: Number, required: true },
+    createdAt: { type: Date, default: Date.now }
+  }],
+  createdAt: { type: Date, default: Date.now }
+});
+
+const Test = contentDB.model('Test', testSchema);
+
+// === Test Management Routes (using contentDB) ===
+
+// 1. Create a new test
+app.post('/api/tests', async (req, res) => {
+  try {
+    const test = new Test(req.body);
+    await test.save();
+    res.status(201).json(test);
+  } catch (error) {
+    console.error('Error creating test:', error);
+    res.status(400).json({ error: 'Failed to create test' });
+  }
+});
+
+// 2. Get all tests
+app.get('/api/tests', async (req, res) => {
+  try {
+    const tests = await Test.find().sort({ createdAt: -1 });
+    res.json(tests);
+  } catch (error) {
+    console.error('Error fetching tests:', error);
+    res.status(500).json({ error: 'Failed to fetch tests' });
+  }
+});
+
+// 3. Update a test
+app.put('/api/tests/:id', async (req, res) => {
+  try {
+    const test = await Test.findByIdAndUpdate(req.params.id, req.body, { 
+      new: true,
+      runValidators: true 
+    });
+    
+    if (!test) {
+      return res.status(404).json({ error: 'Test not found' });
+    }
+    
+    res.json(test);
+  } catch (error) {
+    console.error('Error updating test:', error);
+    res.status(400).json({ error: 'Failed to update test' });
+  }
+});
+
+// 4. Delete a test
+app.delete('/api/tests/:id', async (req, res) => {
+  try {
+    const test = await Test.findByIdAndDelete(req.params.id);
+    
+    if (!test) {
+      return res.status(404).json({ error: 'Test not found' });
+    }
+    
+    res.json({ message: 'Test deleted successfully' });
+  } catch (error) {
+    console.error('Error deleting test:', error);
+    res.status(500).json({ error: 'Failed to delete test' });
+  }
+});
+
+// 5. Add question to test
+app.post('/api/tests/:id/questions', async (req, res) => {
+  try {
+    const test = await Test.findById(req.params.id);
+    
+    if (!test) {
+      return res.status(404).json({ error: 'Test not found' });
+    }
+    
+    test.questions.push(req.body);
+    await test.save();
+    
+    res.status(201).json(test);
+  } catch (error) {
+    console.error('Error adding question:', error);
+    res.status(400).json({ error: 'Failed to add question' });
+  }
+});
+
+// 6. Update question in test
+app.put('/api/tests/:testId/questions/:questionId', async (req, res) => {
+  try {
+    const test = await Test.findById(req.params.testId);
+    
+    if (!test) {
+      return res.status(404).json({ error: 'Test not found' });
+    }
+    
+    const question = test.questions.id(req.params.questionId);
+    
+    if (!question) {
+      return res.status(404).json({ error: 'Question not found' });
+    }
+    
+    question.set(req.body);
+    await test.save();
+    
+    res.json(test);
+  } catch (error) {
+    console.error('Error updating question:', error);
+    res.status(400).json({ error: 'Failed to update question' });
+  }
+});
+
+// 7. Delete question from test
+app.delete('/api/tests/:testId/questions/:questionId', async (req, res) => {
+  try {
+    const test = await Test.findById(req.params.testId);
+    
+    if (!test) {
+      return res.status(404).json({ error: 'Test not found' });
+    }
+    
+    test.questions.id(req.params.questionId).remove();
+    await test.save();
+    
+    res.json(test);
+  } catch (error) {
+    console.error('Error deleting question:', error);
+    res.status(500).json({ error: 'Failed to delete question' });
+  }
+});
+
+//------------------------------------------mix-------------------------------------------------//
+
 // === Start Server ===
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
