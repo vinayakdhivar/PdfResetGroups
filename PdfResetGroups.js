@@ -482,14 +482,7 @@ app.use((err, req, res, next) => {
 
 //------------------------------------------mix-------------------------------------------------//
 
-// === Database Connections ===
-// Add this with your other connections at the top of your file
-const testsDB = mongoose.createConnection('mongodb+srv://digitallaw2025:DhivarVinayak@cluster0.buidy6u.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0', {
-  useNewUrlParser: true,
-  useUnifiedTopology: true
-});
-testsDB.on('connected', () => console.log('✅ Tests DB connected to MongoDB.'));
-testsDB.on('error', err => console.error('❌ Tests DB connection error:', err));
+
 
 //------------------------------------------Test Management-------------------------------------------------//
 
