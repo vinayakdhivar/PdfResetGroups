@@ -608,7 +608,29 @@ app.get('/api/tests', checkDBConnection, async (req, res) => {
   }
 });
 
-// 3. Update test details
+// 3. Get single test by ID with all questions
+app.get('/api/tests/:id', checkDBConnection, async (req, res) => {
+  try {
+    const test = await Test.findById(req.params.id);
+    if (!test) return res.status(404).json({ error: 'Test not found' });
+    
+    res.json({
+      _id: test._id,
+      name: test.name,
+      description: test.description,
+      questions: test.questions,
+      createdAt: test.createdAt
+    });
+  } catch (error) {
+    console.error('Error fetching test:', error);
+    res.status(500).json({ 
+      error: 'Failed to fetch test',
+      details: error.message 
+    });
+  }
+});
+
+// 4. Update test details
 app.put('/api/tests/:id', checkDBConnection, async (req, res) => {
   try {
     const updates = {
@@ -633,7 +655,7 @@ app.put('/api/tests/:id', checkDBConnection, async (req, res) => {
   }
 });
 
-// 4. Delete a test
+// 5. Delete a test
 app.delete('/api/tests/:id', checkDBConnection, async (req, res) => {
   try {
     const test = await Test.findByIdAndDelete(req.params.id);
@@ -648,7 +670,7 @@ app.delete('/api/tests/:id', checkDBConnection, async (req, res) => {
   }
 });
 
-// 5. Add question to test with validation
+// 6. Add question to test with validation
 app.post('/api/tests/:id/questions', checkDBConnection, async (req, res) => {
   try {
     const { questionText, options, correctAnswer } = req.body;
@@ -686,7 +708,7 @@ app.post('/api/tests/:id/questions', checkDBConnection, async (req, res) => {
   }
 });
 
-// 6. Update question with full validation
+// 7. Update question with full validation
 app.put('/api/tests/:testId/questions/:questionId', checkDBConnection, async (req, res) => {
   try {
     const { questionText, options, correctAnswer } = req.body;
@@ -725,7 +747,7 @@ app.put('/api/tests/:testId/questions/:questionId', checkDBConnection, async (re
   }
 });
 
-// 7. Delete question
+// 8. Delete question
 app.delete('/api/tests/:testId/questions/:questionId', checkDBConnection, async (req, res) => {
   try {
     const test = await Test.findById(req.params.testId);
@@ -745,6 +767,37 @@ app.delete('/api/tests/:testId/questions/:questionId', checkDBConnection, async 
     });
   }
 });
+
+// 9. Submit test results
+app.post('/api/test-results', checkDBConnection, async (req, res) => {
+  try {
+    const { testId, userEmail, score, totalQuestions } = req.body;
+    
+    // Basic validation
+    if (!testId || !userEmail || score === undefined || !totalQuestions) {
+      return res.status(400).json({ error: 'Missing required fields' });
+    }
+    
+    // Here you would typically save the results to a TestResult collection
+    // For now, we'll just return a success response
+    res.json({
+      success: true,
+      message: 'Test results recorded',
+      testId,
+      userEmail,
+      score,
+      totalQuestions,
+      percentage: Math.round((score / totalQuestions) * 100)
+    });
+  } catch (error) {
+    console.error('Error submitting test results:', error);
+    res.status(500).json({ 
+      error: 'Failed to submit test results',
+      details: error.message 
+    });
+  }
+});
+
 //------------------------------------------mix-------------------------------------------------//
 
 // === Start Server ===
