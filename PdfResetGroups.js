@@ -482,7 +482,18 @@ app.use((err, req, res, next) => {
 
 //------------------------------------------mix-------------------------------------------------//
 
-// 4. Test Management Schema (using contentDB)
+// === Database Connections ===
+// Add this with your other connections at the top of your file
+const testsDB = mongoose.createConnection('mongodb+srv://digitallaw2025:DhivarVinayak@cluster0.buidy6u.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0', {
+  useNewUrlParser: true,
+  useUnifiedTopology: true
+});
+testsDB.on('connected', () => console.log('✅ Tests DB connected to MongoDB.'));
+testsDB.on('error', err => console.error('❌ Tests DB connection error:', err));
+
+//------------------------------------------Test Management-------------------------------------------------//
+
+// Test Management Schema (using dedicated testsDB)
 const testSchema = new mongoose.Schema({
   name: { type: String, required: true },
   description: String,
@@ -495,9 +506,9 @@ const testSchema = new mongoose.Schema({
   createdAt: { type: Date, default: Date.now }
 });
 
-const Test = contentDB.model('Test', testSchema);
+const Test = testsDB.model('Test', testSchema);
 
-// === Test Management Routes (using contentDB) ===
+// === Test Management Routes ===
 
 // 1. Create a new test
 app.post('/api/tests', async (req, res) => {
@@ -619,6 +630,8 @@ app.delete('/api/tests/:testId/questions/:questionId', async (req, res) => {
     res.status(500).json({ error: 'Failed to delete question' });
   }
 });
+
+//------------------------------------------End Test Management-------------------------------------------------//
 
 //------------------------------------------mix-------------------------------------------------//
 
