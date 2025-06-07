@@ -482,8 +482,6 @@ app.use((err, req, res, next) => {
 
 //------------------------------------------mix-------------------------------------------------//
 
-
-
 //------------------------------------------Test Management-------------------------------------------------//
 
 // Improved MongoDB connection with better error handling
@@ -492,26 +490,18 @@ const testsDB = mongoose.createConnection(
   {
     useNewUrlParser: true,
     useUnifiedTopology: true,
-    serverSelectionTimeoutMS: 5000, // 5 seconds to establish connection
-    socketTimeoutMS: 45000, // 45 seconds for queries to execute
-    connectTimeoutMS: 10000 // 10 seconds to connect
+    serverSelectionTimeoutMS: 5000,
+    socketTimeoutMS: 45000,
+    connectTimeoutMS: 10000
   }
 );
 
 // Enhanced connection event handlers
-testsDB.on('connected', () => {
-  console.log('✅ Tests DB connected to MongoDB');
-});
+testsDB.on('connected', () => console.log('✅ Tests DB connected to MongoDB'));
+testsDB.on('disconnected', () => console.log('❌ Tests DB disconnected from MongoDB'));
+testsDB.on('error', (err) => console.error('❌ Tests DB connection error:', err));
 
-testsDB.on('disconnected', () => {
-  console.log('❌ Tests DB disconnected from MongoDB');
-});
-
-testsDB.on('error', (err) => {
-  console.error('❌ Tests DB connection error:', err);
-});
-
-// Middleware to check DB connection before handling requests
+// Middleware to check DB connection
 const checkDBConnection = (req, res, next) => {
   if (testsDB.readyState !== 1) {
     return res.status(500).json({ 
@@ -522,14 +512,56 @@ const checkDBConnection = (req, res, next) => {
   next();
 };
 
-// Test Management Schema
+// Enhanced Test Management Schema with better validation
 const testSchema = new mongoose.Schema({
-  name: { type: String, required: true },
-  description: String,
+  name: { 
+    type: String, 
+    required: true,
+    trim: true,
+    minlength: 3,
+    maxlength: 100
+  },
+  description: {
+    type: String,
+    trim: true,
+    maxlength: 500
+  },
   questions: [{
-    questionText: { type: String, required: true },
-    options: [{ type: String, required: true }],
-    correctAnswer: { type: Number, required: true },
+    questionText: { 
+      type: String, 
+      required: true,
+      trim: true,
+      minlength: 10,
+      maxlength: 1000
+    },
+    options: { 
+      type: [{
+        type: String,
+        trim: true,
+        minlength: 1,
+        maxlength: 200
+      }], 
+      required: true,
+      validate: {
+        validator: function(v) {
+          // At least 2 options, no duplicates (case insensitive)
+          if (v.length < 2) return false;
+          const lowerCaseOptions = v.map(opt => opt.toLowerCase());
+          return new Set(lowerCaseOptions).size === v.length;
+        },
+        message: 'At least 2 unique options are required'
+      }
+    },
+    correctAnswer: { 
+      type: Number, 
+      required: true,
+      validate: {
+        validator: function(v) {
+          return v >= 0 && v < this.options.length;
+        },
+        message: 'Correct answer must be a valid option index'
+      }
+    },
     createdAt: { type: Date, default: Date.now }
   }],
   createdAt: { type: Date, default: Date.now }
@@ -537,27 +569,41 @@ const testSchema = new mongoose.Schema({
 
 const Test = testsDB.model('Test', testSchema);
 
-// === Test Management Routes ===
+// === Enhanced Test Management Routes ===
 
 // 1. Create a new test
 app.post('/api/tests', checkDBConnection, async (req, res) => {
   try {
-    const test = new Test(req.body);
+    const test = new Test({
+      name: req.body.name,
+      description: req.body.description,
+      questions: [] // Start with empty questions
+    });
     await test.save();
     res.status(201).json(test);
   } catch (error) {
     console.error('Error creating test:', error);
     res.status(400).json({ 
       error: 'Failed to create test',
-      details: error.message 
+      details: error.message.replace('Validation failed: ', '')
     });
   }
 });
 
-// 2. Get all tests (with improved error handling)
+// 2. Get all tests with question count
 app.get('/api/tests', checkDBConnection, async (req, res) => {
   try {
-    const tests = await Test.find().sort({ createdAt: -1 });
+    const tests = await Test.aggregate([
+      {
+        $project: {
+          name: 1,
+          description: 1,
+          questionCount: { $size: "$questions" },
+          createdAt: 1
+        }
+      },
+      { $sort: { createdAt: -1 } }
+    ]);
     res.json(tests);
   } catch (error) {
     console.error('Error fetching tests:', error);
@@ -568,28 +614,27 @@ app.get('/api/tests', checkDBConnection, async (req, res) => {
   }
 });
 
-// 3. Update a test
+// 3. Update test details
 app.put('/api/tests/:id', checkDBConnection, async (req, res) => {
   try {
+    const updates = {
+      name: req.body.name,
+      description: req.body.description
+    };
+    
     const test = await Test.findByIdAndUpdate(
       req.params.id, 
-      req.body, 
-      { 
-        new: true,
-        runValidators: true 
-      }
+      updates, 
+      { new: true, runValidators: true }
     );
     
-    if (!test) {
-      return res.status(404).json({ error: 'Test not found' });
-    }
-    
+    if (!test) return res.status(404).json({ error: 'Test not found' });
     res.json(test);
   } catch (error) {
     console.error('Error updating test:', error);
     res.status(400).json({ 
       error: 'Failed to update test',
-      details: error.message 
+      details: error.message.replace('Validation failed: ', '')
     });
   }
 });
@@ -598,11 +643,7 @@ app.put('/api/tests/:id', checkDBConnection, async (req, res) => {
 app.delete('/api/tests/:id', checkDBConnection, async (req, res) => {
   try {
     const test = await Test.findByIdAndDelete(req.params.id);
-    
-    if (!test) {
-      return res.status(404).json({ error: 'Test not found' });
-    }
-    
+    if (!test) return res.status(404).json({ error: 'Test not found' });
     res.json({ message: 'Test deleted successfully' });
   } catch (error) {
     console.error('Error deleting test:', error);
@@ -613,78 +654,94 @@ app.delete('/api/tests/:id', checkDBConnection, async (req, res) => {
   }
 });
 
-// 5. Add question to test
+// 5. Add question to test with validation
 app.post('/api/tests/:id/questions', checkDBConnection, async (req, res) => {
   try {
+    const { questionText, options, correctAnswer } = req.body;
+    
+    // Validate input
+    if (!questionText || !options || correctAnswer === undefined) {
+      return res.status(400).json({ error: 'Missing required fields' });
+    }
+    
+    if (!Array.isArray(options) || options.length < 2) {
+      return res.status(400).json({ error: 'At least 2 options required' });
+    }
+    
+    if (correctAnswer < 0 || correctAnswer >= options.length) {
+      return res.status(400).json({ error: 'Invalid correct answer index' });
+    }
+    
     const test = await Test.findById(req.params.id);
+    if (!test) return res.status(404).json({ error: 'Test not found' });
     
-    if (!test) {
-      return res.status(404).json({ error: 'Test not found' });
-    }
+    test.questions.push({
+      questionText,
+      options,
+      correctAnswer
+    });
     
-    // Validate question data
-    if (!req.body.questionText || !req.body.options || req.body.correctAnswer === undefined) {
-      return res.status(400).json({ error: 'Missing required question fields' });
-    }
-    
-    test.questions.push(req.body);
     await test.save();
-    
     res.status(201).json(test);
   } catch (error) {
     console.error('Error adding question:', error);
     res.status(400).json({ 
       error: 'Failed to add question',
-      details: error.message 
+      details: error.message.replace('Validation failed: ', '')
     });
   }
 });
 
-// 6. Update question in test
+// 6. Update question with full validation
 app.put('/api/tests/:testId/questions/:questionId', checkDBConnection, async (req, res) => {
   try {
-    const test = await Test.findById(req.params.testId);
+    const { questionText, options, correctAnswer } = req.body;
     
-    if (!test) {
-      return res.status(404).json({ error: 'Test not found' });
+    // Validate input
+    if (!questionText || !options || correctAnswer === undefined) {
+      return res.status(400).json({ error: 'Missing required fields' });
     }
+    
+    if (!Array.isArray(options) || options.length < 2) {
+      return res.status(400).json({ error: 'At least 2 options required' });
+    }
+    
+    if (correctAnswer < 0 || correctAnswer >= options.length) {
+      return res.status(400).json({ error: 'Invalid correct answer index' });
+    }
+    
+    const test = await Test.findById(req.params.testId);
+    if (!test) return res.status(404).json({ error: 'Test not found' });
     
     const question = test.questions.id(req.params.questionId);
+    if (!question) return res.status(404).json({ error: 'Question not found' });
     
-    if (!question) {
-      return res.status(404).json({ error: 'Question not found' });
-    }
+    question.questionText = questionText;
+    question.options = options;
+    question.correctAnswer = correctAnswer;
     
-    question.set(req.body);
     await test.save();
-    
     res.json(test);
   } catch (error) {
     console.error('Error updating question:', error);
     res.status(400).json({ 
       error: 'Failed to update question',
-      details: error.message 
+      details: error.message.replace('Validation failed: ', '')
     });
   }
 });
 
-// 7. Delete question from test
+// 7. Delete question
 app.delete('/api/tests/:testId/questions/:questionId', checkDBConnection, async (req, res) => {
   try {
     const test = await Test.findById(req.params.testId);
-    
-    if (!test) {
-      return res.status(404).json({ error: 'Test not found' });
-    }
+    if (!test) return res.status(404).json({ error: 'Test not found' });
     
     const question = test.questions.id(req.params.questionId);
-    if (!question) {
-      return res.status(404).json({ error: 'Question not found' });
-    }
+    if (!question) return res.status(404).json({ error: 'Question not found' });
     
     question.remove();
     await test.save();
-    
     res.json({ message: 'Question deleted successfully', test });
   } catch (error) {
     console.error('Error deleting question:', error);
@@ -695,13 +752,14 @@ app.delete('/api/tests/:testId/questions/:questionId', checkDBConnection, async 
   }
 });
 
-// Add health check endpoint
+// Enhanced health check endpoint
 app.get('/api/health', (req, res) => {
   const dbStatus = testsDB.readyState === 1 ? 'connected' : 'disconnected';
   res.json({
-    status: 'ok',
-    dbStatus: dbStatus,
-    timestamp: new Date()
+    status: dbStatus === 'connected' ? 'healthy' : 'unhealthy',
+    dbStatus,
+    timestamp: new Date(),
+    uptime: process.uptime()
   });
 });
 //------------------------------------------mix-------------------------------------------------//
