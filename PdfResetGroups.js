@@ -798,6 +798,27 @@ app.post('/api/test-results', checkDBConnection, async (req, res) => {
   }
 });
 
+
+//--------------------test----------------------------//
+
+// Add this route to get questions for a specific test
+app.get('/api/tests/:id/questions', checkDBConnection, async (req, res) => {
+  try {
+    const test = await Test.findById(req.params.id);
+    if (!test) return res.status(404).json({ error: 'Test not found' });
+    
+    res.json(test.questions);
+  } catch (error) {
+    console.error('Error fetching test questions:', error);
+    res.status(500).json({ 
+      error: 'Failed to fetch test questions',
+      details: error.message 
+    });
+  }
+});
+
+//--------------------test----------------------------//
+
 //------------------------------------------mix-------------------------------------------------//
 
 // === Start Server ===
