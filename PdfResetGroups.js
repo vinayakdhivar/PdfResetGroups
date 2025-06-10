@@ -817,6 +817,60 @@ app.get('/api/tests/:id/questions', checkDBConnection, async (req, res) => {
   }
 });
 
+// Enhanced question deletion endpoint
+app.delete('/api/tests/:testId/questions/:questionId', checkDBConnection, async (req, res) => {
+  try {
+    const { testId, questionId } = req.params;
+
+    // Find the test
+    const test = await Test.findById(testId);
+    if (!test) {
+      return res.status(404).json({ 
+        error: 'Test not found',
+        details: `Test with ID ${testId} does not exist`
+      });
+    }
+
+    // Find the question index
+    const questionIndex = test.questions.findIndex(
+      q => q._id.toString() === questionId
+    );
+
+    if (questionIndex === -1) {
+      return res.status(404).json({ 
+        error: 'Question not found',
+        details: `Question with ID ${questionId} not found in test ${testId}`
+      });
+    }
+
+    // Remove the question
+    test.questions.splice(questionIndex, 1);
+    
+    // Save the updated test
+    await test.save();
+
+    res.status(200).json({
+      success: true,
+      message: 'Question deleted successfully',
+      testId,
+      questionId
+    });
+
+  } catch (error) {
+    console.error('Error deleting question:', {
+      params: req.params,
+      error: error.message,
+      stack: error.stack
+    });
+    
+    res.status(500).json({ 
+      error: 'Failed to delete question',
+      details: error.message,
+      suggestion: 'Check server logs for more details'
+    });
+  }
+});
+
 //--------------------test----------------------------//
 
 //------------------------------------------mix-------------------------------------------------//
