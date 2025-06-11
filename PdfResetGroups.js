@@ -747,18 +747,29 @@ app.put('/api/tests/:testId/questions/:questionId', checkDBConnection, async (re
   }
 });
 
-// 8. Delete question
+// 8. Delete question - Fixed version
 app.delete('/api/tests/:testId/questions/:questionId', checkDBConnection, async (req, res) => {
   try {
     const test = await Test.findById(req.params.testId);
     if (!test) return res.status(404).json({ error: 'Test not found' });
     
-    const question = test.questions.id(req.params.questionId);
-    if (!question) return res.status(404).json({ error: 'Question not found' });
+    // Find the question index
+    const questionIndex = test.questions.findIndex(
+      q => q._id.toString() === req.params.questionId
+    );
     
-    question.remove();
+    if (questionIndex === -1) {
+      return res.status(404).json({ error: 'Question not found' });
+    }
+    
+    // Remove the question using splice
+    test.questions.splice(questionIndex, 1);
+    
     await test.save();
-    res.json({ message: 'Question deleted successfully', test });
+    res.json({ 
+      message: 'Question deleted successfully',
+      remainingQuestions: test.questions.length 
+    });
   } catch (error) {
     console.error('Error deleting question:', error);
     res.status(500).json({ 
